@@ -1,13 +1,56 @@
-# 2025飞行器激光雷达建图方案
+# 飞行器 ROS2 激光 SLAM 方案
 
-**原创**：赵立凯
-**作者**：闫腾岳                                                                                                                                                                      ——**写于2025年11月**
-
---------
+> **原创**：赵立凯          **作者**：闫腾岳      
 
 
+------
 
-## 引言
+**配套文件提取链接（GitHub）：**[The-SLAM-of-Raspberrypi5b-and-ROS2-and-N10radar](https://github.com/Flightsquadyeah/The-SLAM-of-Raspberrypi5b-and-ROS2-and-N10radar)
+
+**配套文件也会以压缩包的方式传至QQ群内**
+
+**本文涉及功能包皆在`Pakage`文件夹**
+
+**本文涉及教学文档皆在`Instruction`文件夹**
+
+-----
+**更新日历:**
+
+| 日期       | 更新内容                            |作者|
+| ---------- | :---------------------------------- |---------------------------------------------|
+| 2026-04-29 | 优化建图流程与Cartographer 配置参数 |闫腾岳|
+| 2025-11-17 | 初始版本发布，完整的建图流程        |闫腾岳|
+
+------
+
+**工程配置**：
+
+> 硬件：树莓派5B + 轮趣科技镭神 N10 激光雷达（串口版）
+>  系统：Ubuntu 24.04 LTS
+>  ROS2：Jazzy Jalosiewski
+>  SLAM：Cartographer 2D
+
+------
+
+## 目录
+
+- [序](#序)
+- [第一章 给树莓派安装 Ubuntu 24.04 系统](#第一章-给树莓派安装-ubuntu-2404-系统)
+- [第二章 Ubuntu 系统初始配置](#第二章-ubuntu-系统初始配置)
+- [第三章 安装 ROS2 Jazzy](#第三章-安装-ros2-jazzy)
+- [第四章 创建 ROS2 工作空间](#第四章-创建-ros2-工作空间)
+- [第五章 安装 N10 雷达驱动](#第五章-安装-n10-雷达驱动)
+- [第六章 配置雷达串口](#第六章-配置雷达串口)
+- [第七章 编译并测试雷达驱动](#第七章-编译并测试雷达驱动)
+- [第八章 安装 Cartographer](#第八章-安装-cartographer)
+- [第九章 配置 Cartographer 建图文件](#第九章-配置-cartographer-建图文件)
+- [第十章 启动建图](#第十章-启动建图)
+
+------
+
+## 序
+
+### 原序
 
 多年以后，面对非洲贫瘠的大地，赵立凯回想起那个用树莓派建图把飞机调好的漆黑夜晚。时代的浪花淹没了每一个囿于舒适圈、止步不前的人，而电赛的荣誉总是属于那些敢于创新、一往无前的人。
 
@@ -19,435 +62,489 @@
 
 基于以上，我们就可以开始学习建图了。最后稍微说明一下，以下建图方案全部基于赵立凯的言传身教，作为二次转述者，或因本人理解不深、能力有限，或表意不清词不达意，以下算是抛砖引玉仅供参考，方案并不完美，作为入门资料阅读、学习即可。希望在我写、你看的时候，我们能共同学习，共同传承，共同进步。
 
---------
+### 再序
 
+本文及相关文件已上传至GitHub，链接如下：[The-SLAM-of-Raspberrypi5b-and-ROS2-and-N10radar](https://github.com/Flightsquadyeah/The-SLAM-of-Raspberrypi5b-and-ROS2-and-N10radar)。大家需要加入我创建的组才能查看，请联系组内同学邀请加入。没有看过前一版的，通过GitHub，可查看本方案的历史版本。本次教程将以GitHub上的文件为主导进行讲解，同时我也会将所有文件整合成压缩包提供，大家可根据自身习惯选择使用方式。
 
+本文经过了全面的修订与补充，与之前版本相比焕然一新。技术的发展永无止境，正如没有圆规能画出绝对完美的圆，我们的技术方案也在不断探索与改进中趋近完善。受限于开源资料、个人技术水平及硬件条件，本文仅在能力范围内进行了优化与修改，虽非尽善尽美，但足以满足入门学习与使用需求。欢迎大家批评指正，共同探索与发展更优的技术方案。
 
-## 给树莓派安装ubuntu系统（在你的windows系统电脑中操作）
+与之前版本相比，本次更新主要优化了建图流程与算法参数，并提升了文档质量，修正了之前存在的错别字与表述错误。另外需要特别说明的是，之前我们都认为`laser_scan_matcher`功能包是多余的，实测表明这个观点是不准确的。该功能包在缺乏惯导或IMU提供里程计坐标系（odom）的情况下，可以通过点云信息计算出纯数学里程计坐标系，替代IMU的作用，保证建图过程的稳定性。若之后学弟学妹们条件允许，建议为系统添加惯导设备代替该功能包以进一步提升建图精度。也就是说赵立凯的建图方案除了流程不规范，还有一些参数问题，并无实质性Bug，每一个功能包都必不可少，还是鲜少的夸一句赵立凯牛逼。
 
-### 镜像烧录工具
+在上一版文章中，我曾在正文中穿插了一段关于“建图”概念的介绍，开头写道：**“为了让大家更好地理解后续内容，在具体操作之前先简单说明几句”**。本次修订以教程为主，正文不再穿插讲解部分，而是以引用与注释形式在代码和命令之后进行说明，部分无解释的指令大家自行询问AI理解。而建图概念的介绍部分我想写在这里：
 
-可以下载树莓派官方的烧录工具,如图所示       ![屏幕截图 2025-11-09 114113](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20114113.png)
-> 官网下载链接->https://www.raspberrypi.com/software/
+在学习树莓派+ROS2建图之前，或许大家已经尝试过将激光雷达直接连接飞控使用。这样做会发现：雷达数据量大、处理复杂，人工开发完善的数据处理算法既困难又不现实，且单片机算力有限，难以满足实时处理需求。引入树莓派+ROS2建图方案恰好解决了这些问题：树莓派提供强大算力支持，满足实时处理需求；ROS2系统集成了成熟的算法包，可直接调用，无需从零开发。
 
-### 烧录工具使用
+总结下来，建图的本质就是：将激光雷达的点云数据处理为周围环境的空间地图，进而确定飞行器在环境中的位置与姿态。那么工作流程就可概括为：树莓派采集雷达数据 → 算法包处理数据 → 配置参数构建地图。
 
-先准备一张SD卡或者有硬盘转接模块的可以准备一块固态硬盘，32G够用64G更好，跑视觉可能要更大的，实验室应该会有准备好的，这个不用太在意。
+希望大家对建图已有基本了解，接下来我们正式开始学习建图技术。如果还是对我们究竟要做什么没有概念也不必担心，下文将提供详细的步骤指导，纯傻瓜教程，只需按照流程操作即可逐步掌握。干中学吧，多用用自然就理解了。
 
-1. 打开烧录工具是这个样子的
+------
 
-     ![d67d98676424e22d8464cbe82f51399e](./飞行器ros2激光slam方案.assets/d67d98676424e22d8464cbe82f51399e.png)
+## 第一章 给树莓派安装 Ubuntu 24.04 系统
 
-​    
+### 1.1 准备工具
 
-2. 点击   `选择设备`
+- 树莓派5B 一块
+- MicroSD 卡（32G 以上）或 NVMe 固态硬盘 + 转接板
+- Windows 电脑
+- 树莓派官方烧录工具：[Raspberry Pi Imager](https://www.raspberrypi.com/software/)
 
-    ![23295e87934f5d057dce30b4fdd81778](./飞行器ros2激光slam方案.assets/23295e87934f5d057dce30b4fdd81778.png)
+### 1.2 烧录系统
 
-    这里用的   哪个型号的树莓派选哪个就行，我们用的是Raspberry Pi 5
+1. 下载并安装树莓派官方烧录工具![image-20260426212916019](./飞行器ros2激光slam方案.assets/image-20260426212916019.png)
+2. 打开烧录工具，点击「选择设备」→ 选择 **Raspberry Pi 5**![image-20260426212940677](./飞行器ros2激光slam方案.assets/image-20260426212940677.png)
+3. 点击「选择操作系统」→ **Other general-purpose OS** → **Ubuntu** → **Ubuntu Desktop 24.04 LTS (64-bit)**![image-20260426213120190](./飞行器ros2激光slam方案.assets/image-20260426213120190.png)![image-20260426213159070](./飞行器ros2激光slam方案.assets/image-20260426213159070.png)![image-20260426213236243](./飞行器ros2激光slam方案.assets/image-20260426213236243.png)
+4. 将 SD 卡或硬盘接入电脑，点击「选择存储设备」→ 选择目标存储设备
+5. 点击「下一步」→ 在弹出的设置中配置（此步骤可能会自动跳过）：
+   - 设置主机名（如 `raspberrypi`）
+   - 设置用户名和密码（建议设置简单易记的组合，如用户名 `ubuntu`，密码 `123456`）
+   - 选择时区：**Asia/Shanghai**
+   - 勾选「配置无线局域网」并输入 WiFi 密码
+   - 勾选「启用 SSH」→ 使用密码认证
+6. 点击「写入」→ 等待烧录完成![image-20260426213729931](./飞行器ros2激光slam方案.assets/image-20260426213729931.png)![image-20260426213757842](./飞行器ros2激光slam方案.assets/image-20260426213757842.png)
+7. 将 SD 卡/硬盘插入树莓派，连接显示器、键盘、鼠标，上电启动
 
-3. 返回去点击 `选择操作系统`去选择我们想要安装的操作系统
+> ⚠️ 树莓派5 仅支持 Ubuntu 24.04 及以上版本，不支持 22.04。对应的 ROS2 版本为 Jazzy。
 
-   ![e2f0b000694424d9df7de4fd2d8e5946](./飞行器ros2激光slam方案.assets/e2f0b000694424d9df7de4fd2d8e5946.png)
+------
 
-   打开是上面这样的，往下滚动
+## 第二章 Ubuntu 系统初始配置
 
-   ![8925c61b9a695a517d55d40ce046e598](./飞行器ros2激光slam方案.assets/8925c61b9a695a517d55d40ce046e598.png)
+### 2.1 首次启动
 
-   点击图中箭头所指的选项`Other general-purpose OS`，进入下一级后选择`ubuntu`，选择`ubuntu Desktop24.04.3`![d4fa5c58df5336765ec8056421dba6e7](./飞行器ros2激光slam方案.assets/d4fa5c58df5336765ec8056421dba6e7.png)
+首次启动会进入 Ubuntu 欢迎界面，按提示完成语言、网络、用户设置。若烧录时已完成配置则跳过此步骤。
 
-   为啥选择这个版本呢，因为赵立凯建图是用的这个，他的方案跟着他走。
+1. 树莓派首次启动时会进行初始配置，包括语言、网络、时区、用户名等设置。建议暂时不连接网络，时区设置为上海，语言可根据个人偏好选择。
 
-4. 把你给树莓派准备的SD卡或硬盘接入电脑，点击`选择储存设备`选择接入的存储设备即可
+   ![屏幕截图 2025-11-09 143623](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20143623.png)
+   上图为用户名设置界面，建议设置简单易记的用户名和密码，避免后续频繁输入时带来不便。
 
-5. 三项都选择完毕后，右下角的`下一步`会变高亮，点击即可
-    ![](./飞行器ros2激光slam方案.assets/07d975576d8fcfc7675ba3989ee18c35-1762667278408-8.png)
+2. 设置中文语言
 
-6. 点击确定，等待烧录完成即可
-
-     ![3b8c48f19bf5afbf2835f6b6f6ade20b](./飞行器ros2激光slam方案.assets/3b8c48f19bf5afbf2835f6b6f6ade20b.png)                                               
---------
-
-
-
-## Linux（ubuntu）系统初始配置与使用
-
-### 初始配置
-
-安装完ubuntu系统，就可以给树莓派接上硬盘或SD卡然后启动了，当然要给树莓派连接显示器和鼠标键盘。
-
-1. 第一次启动树莓派会有初始配置，设置语言、网络、时区、用户名等，尽量先不要连接网络，时区设置上海，语言按你喜好了，会日语设成日语都行【狗头】。
-
-   ![](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20143623.png)
-   上图便是设置用户名的界面，最好把用户名和密码设置得简单好记，设复杂了等你天天要输密码就老实了。
-
-2. 设置中文
-
-   找到下图这个应用
+   打开系统设置应用
 
    ![屏幕截图 2025-11-09 161615](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20161615.png)
-
-   打开如下，图中圈出选项可以下载汉语语言包
-
-   
+   进入语言设置界面，下载并安装汉语语言包
 
    ![屏幕截图 2025-11-09 161805](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20161805.png)
-
-   有了汉语语言包，它会出现在下图所示的位置
+   安装完成后，汉语语言包会出现在语言列表中
 
    ![屏幕截图 2025-11-09 162157](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20162157.png)
-
-   把它`汉语(中国)`用鼠标拖到最顶部就设置完成了
+   将「汉语(中国)」拖至列表顶部，完成中文设置
 
    ![屏幕截图 2025-11-09 162425](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20162425.png)
 
-3. 能设置的还有很多，不知道还能教啥了，自己学学ubuntu操作系统吧，不多讲了
+3. 系统设置选项丰富，建议大家自行探索学习 Ubuntu 操作系统的基本使用方法。
 
-### 终端操作
+### 2.2 终端操作
 
 #### 找到终端
 
-我们在使用树莓派时，大部分的操作都是在ubuntu操作系统的终端里进行的，就是下图这个东西 ![屏幕截图 2025-11-09 195358](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20195358.png)如果你的左侧没有，那么点击左下角那个小圈圈![屏幕截图 2025-11-09 195546](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20195546-1762689390920-7.png)点开后就可以找到`终端`，对准它右击会出现三个选项，点击`固定到快捷栏`它就会到桌面的左侧了
+在树莓派的使用过程中，大部分操作需要通过 Ubuntu 操作系统的终端完成。终端应用如下图所示：
+
+![屏幕截图 2025-11-09 195358](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20195358.png)
+
+若桌面左侧未显示终端图标，可点击左下角的应用启动器：
+
+![屏幕截图 2025-11-09 195546-1762689390920-7](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20195546-1762689390920-7.png)
+
+在应用列表中找到「终端」，右键点击并选择「固定到快捷栏」，即可将其添加到桌面左侧：
 
 ![屏幕截图 2025-11-09 200821](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20200821.png)
 
-#### 终端指令
+打开终端后的界面如下：
 
-进入终端，就会来到这样的对话框，你就可以在这敲指令来操作你的树莓派了![屏幕截图 2025-11-09 202547](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20202547.png)
+![屏幕截图 2025-11-09 202547](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-09%20202547.png)
 
-第一次启动，大家可以输入以下指令来更新升级系统文件
+### 2.3 连接网络
 
-``` bash
-sudo apt update   #更新软件索引（获取最新可用软件版本信息）
-sudo apt upgrade  #升级所有已安装软件
+确保树莓派已连接 WiFi 或有线网络，后续所有操作都需要网络。
+
+### 2.4 更新系统
+
+打开终端（快捷键：`Ctrl+Alt+T`），执行以下命令更新系统：
+
+```bash
+sudo apt update
+sudo apt upgrade -y
 ```
 
+### 2.5 安装基础工具
 
-在ubuntu上的一切操作都可以在终端用指令进行，指令大家自己去学吧，多敲两遍就记住了。下面是我找AI帮忙列的一些常用ubuntu指令，可作为参考：
+执行以下命令安装常用工具：
 
-**📁 文件与目录（每天都会用）**
+```bash
+sudo apt install -y vim git curl wget net-tools htop
+```
+
+各工具用途说明：
+
+| 工具        | 用途                                                         |
+| ----------- | ------------------------------------------------------------ |
+| `vim`       | 终端文本编辑器，用于编辑配置文件（如 yaml、lua、launch.py 等） |
+| `git`       | 版本控制工具，用于克隆雷达驱动等 GitHub 仓库                 |
+| `curl`      | 命令行下载工具，添加 ROS2 软件源时需要                       |
+| `wget`      | 命令行下载工具，下载鱼香 ROS 安装脚本等资源时需要            |
+| `net-tools` | 网络诊断工具集，提供 `ifconfig` 等命令查看 IP 和网络状态     |
+| `htop`      | 系统资源监控工具，实时查看 CPU、内存占用，排查树莓派卡顿问题 |
+
+后续操作会涉及这些工具的使用，建议大家熟悉基本操作方法。
+
+### 2.6 终端操作
+
+Ubuntu 系统的大部分操作都可以通过终端命令完成。以下是一些常用的 Ubuntu 终端命令，供大家参考：
+
+**📁 文件与目录操作（常用）**
 
 | 命令           | 说明                 | 常用示例                                                    |
-| :-------- | :-------- | :-------- |
-| `ls`           | **列出**当前目录内容 | `ls -l`（看详情）                                           |
-| `cd`           | **切换**目录         | `cd ~`（回家）                                              |
-| `pwd`          | 显示**当前路径**     | `pwd`                                                       |
-| `cp`           | **复制**文件/目录    | `cp file1 file2`，`cp -r dir1 dir2`（复制目录）             |
-| `mv`           | **移动/重命名**      | `mv old.txt new.txt`                                        |
-| `rm`           | **删除**（小心！）   | `rm file`，`rm -r dir`（删目录）                            |
-| `mkdir`        | **创建**新目录       | `mkdir new_folder`                                          |
-| `cat` / `less` | **查看**文件内容     | `cat file`（短文件），`less log.txt`（长文件，按 `q` 退出） |
+| -------------- | -------------------- | ----------------------------------------------------------- |
+| `ls`           | 列出当前目录内容     | `ls -l`（查看详细信息）                                     |
+| `cd`           | 切换目录             | `cd ~`（返回主目录）                                        |
+| `pwd`          | 显示当前路径         | `pwd`                                                       |
+| `cp`           | 复制文件/目录        | `cp file1 file2`，`cp -r dir1 dir2`（复制目录）             |
+| `mv`           | 移动/重命名文件      | `mv old.txt new.txt`                                        |
+| `rm`           | 删除文件/目录（谨慎）| `rm file`，`rm -r dir`（删除目录）                          |
+| `mkdir`        | 创建新目录           | `mkdir new_folder`                                          |
+| `cat` / `less` | 查看文件内容         | `cat file`（短文件），`less log.txt`（长文件，按 `q` 退出） |
 
-**📦 软件安装（靠这个装一切）**
+**📦 软件管理**
 
 | 命令                      | 说明                             |
-| :-------- | :-------- |
-| `sudo apt update`         | **更新**软件源列表（必须先运行） |
-| `sudo apt install <包名>` | **安装**软件                     |
-| `sudo apt remove <包名>`  | **卸载**软件                     |
-| `sudo apt upgrade`        | **升级**所有已安装的软件         |
+| ------------------------- | -------------------------------- |
+| `sudo apt update`         | 更新软件源列表（安装前必执行）   |
+| `sudo apt install <包名>` | 安装指定软件                     |
+| `sudo apt remove <包名>`  | 卸载指定软件                     |
+| `sudo apt upgrade`        | 升级所有已安装的软件             |
 
 **🔧 系统管理与权限**
 
 | 命令            | 说明                                       |
-| :-------- | :-------- |
-| `sudo <命令>`   | **以管理员权限**执行命令（需要密码）       |
-| `chmod +x file` | 给文件添加**可执行权限**                   |
-| `ps aux`        | 查看**所有正在运行**的进程                 |
-| `kill <PID>`    | **结束**指定PID的进程                      |
-| `df -h`         | 查看**磁盘空间**（-h 易读格式）            |
-| `top`           | **实时**查看系统资源占用（类似任务管理器） |
+| --------------- | ------------------------------------------ |
+| `sudo <命令>`   | 以管理员权限执行命令（需要输入密码）       |
+| `chmod +x file` | 给文件添加可执行权限                       |
+| `ps aux`        | 查看所有正在运行的进程                     |
+| `kill <PID>`    | 结束指定 PID 的进程                        |
+| `df -h`         | 查看磁盘空间（-h 为易读格式）              |
+| `top`           | 实时查看系统资源占用（类似任务管理器）     |
 
- **🌐 网络相关**
+**🌐 网络相关**
 
 | 命令          | 说明                     |
-| :-------- | :-------- |
-| `ping <网址>` | **测试**网络是否连通     |
-| `ssh user@ip` | **远程登录**到另一台电脑 |
-| `wget <网址>` | **下载**文件             |
+| ------------- | ------------------------ |
+| `ping <网址>` | 测试网络是否连通         |
+| `ssh user@ip` | 远程登录到另一台电脑     |
+| `wget <网址>` | 下载文件                 |
 
 **📝 文本处理**
 
-| 命令               | 说明                                                     |
-| :-------- | :-------- |
-| `grep "文本" file` | 在文件中**搜索**指定文本                                 |
-| `tail -f log.txt`  | **实时追踪**日志文件更新（调试神器）|
+| 命令               | 说明                                 |
+| ------------------ | ------------------------------------ |
+| `grep "文本" file` | 在文件中搜索指定文本                 |
+| `tail -f log.txt`  | 实时追踪日志文件更新（调试常用）     |
 
-- **入门三指令：** 
-  1. **查看当前目录里有什么** → `ls`
-  2. **安装一个新软件** → `sudo apt install 软件名`
-  3. **查看一个文件内容** → `cat 文件名` 或 `less 文件名`
-  
-- **最重要的小技巧：**
+### 终端操作小技巧
 
-  - **按 `Tab` 键自动补全**文件名和命令，能防止拼写错误。
-  - 任何命令后加 `--help` 可以查看简要帮助，如 `ls --help`。
+- **入门三指令：**
+  1. 查看当前目录内容 → `ls`
+  2. 安装新软件 → `sudo apt install 软件名`
+  3. 查看文件内容 → `cat 文件名` 或 `less 文件名`
 
+- **实用技巧：**
+  - 按 `Tab` 键可自动补全文件名和命令，避免拼写错误
+  - 任何命令后加 `--help` 可查看简要帮助信息，如 `ls --help`
+  - 使用方向键上下可查看历史命令
 
+Ubuntu 作为一种操作系统，熟悉基本操作需要一定时间，建议大家在实践中逐步掌握。
 
-**ubuntu的基本操作用法讲到这里，ubuntu就是一种操作系统，多用用就会了，这里不再多讲了。**
+------
 
---------
+## 第三章 安装 ROS2 Jazzy
 
+### 3.1 一键安装（推荐）
 
+使用鱼香 ROS 一键安装脚本：
 
-## ros2安装与环境配置
-
-### 安装ros2
-
-安装ros2本是一个很复杂的过程，需要设置很多环境，输入很多指令，但是有一个名为**鱼香ros**大佬把安装的过程集中在了一个shell脚本命令里，所以我们只需输入以下命令即可安装ros2
-
-``` bash
+```bash
 wget http://fishros.com/install -O fishros && . fishros
 ```
 
-> 这个命令来源于->https://fishros.com/，这是**鱼香ros**大佬自己的网站，里面还有其他资源，包括ros2的教学资料等。
+> 该命令来源于 [鱼香 ROS](https://fishros.com/)，这是一个提供 ROS 相关资源和教程的网站。
 
+运行脚本后按照以下步骤操作：
 
-在执行这条指令后需要我们输入密码，正常输入即可。输入密码加载一段时间后，终端会弹出以下内容![屏幕截图 2025-11-10 015258](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20015258.png)
+1. 输入 `1` → 选择安装 ROS![屏幕截图 2025-11-10 015258](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20015258.png)
+2. 建议选择 `2` → 不换源下载![屏幕截图 2025-11-10 015813](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20015813.png)
+3. 选择 `ROS2 Jazzy 桌面版`，相关选项均选择 `1`![屏幕截图 2025-11-10 040134](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20040134.png)
 
-可见，这个一键安装命令除了ros2还可以安装别的软件，我们目的是安装ros2，输入1回车即可。回车后会出现以下选项![屏幕截图 2025-11-10 015813](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20015813.png)
+等待安装完成。![屏幕截图 2025-11-10 041108](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20041108.png)
 
-> 这里解释一下“**源**”这个概念：ubuntu中，源就是软件安装/更新的服务器地址库，系统在装软件、更新补丁的时候，会从这些地址下载文件，类似于手机应用商店里的**应用下载服务器**，ubuntu官方默认的软件服务器地址集合称为**系统源**，包含系统组件、官方维护的软件等核心资源。
->
-> 而这里的**“换源”**是指把默认的国外源改为国内镜像源（如中科大镜像源、清华源等），本质是更换更快的“下载服务器”，因为不换源的话，默认系统源是国外的服务器，国内因网络问题下载缓慢。
+### 3.2 手动安装
 
-虽然换源下载更快，但仍然不建议换源下载，因为有些东西国内源是没有的，用`apt install`指令下载某些软件时可能会找不到。我就曾遇见这种情况，具体忘记下载的什么了，但就是因为我是换源下载的ros2，导致当时安装不了。  
-
-所以这里我建议选择2，回车后会依次弹出**”ros版本名称选择“**与**”具体版本”**，如下![屏幕截图 2025-11-10 040134](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20040134.png)
-
-这里我们选择jazzy版本的桌面版，也就是两个选择全选1就好
-
-> jazzy是24年最新更新的ros2版本，支持24.04版本的ubuntu
-
-完成以上一系列操作后，ros2就开始安装了，耐心等待一会儿，等待安装完成即可。![屏幕截图 2025-11-10 041108](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20041108.png)
-
-安装完成后，一定要记得检验一下是否真的安装完成，在命令行输入`ros2`即可
+若一键安装失败，可按照以下步骤手动安装：
 
 ```bash
-#输入
+# 设置 locale
+sudo apt update && sudo apt install locales
+sudo locale-gen en_US en_US.UTF-8
+sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
+
+# 添加 ROS2 软件源
+sudo apt install software-properties-common
+sudo add-apt-repository universe
+sudo apt update && sudo apt install curl -y
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+# 安装 ROS2 Jazzy
+sudo apt update
+sudo apt install ros-jazzy-desktop -y
+```
+
+### 3.3 配置环境变量
+
+执行以下命令配置 ROS2 环境变量：
+
+```bash
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+```
+
+> 上述命令的作用是将 `source /opt/ros/jazzy/setup.bash` 写入 `~/.bashrc` 文件，这样每次打开终端时都会自动加载 ROS2 环境。
+
+### 3.4 验证安装
+
+执行以下命令验证 ROS2 安装是否成功：
+
+```bash
 ros2
-
-#安装成功的响应
-usage: ros2 [-h] [--use-python-default-buffering]
-            Call `ros2 <command> -h` for more detailed usage. ...
-
-ros2 is an extensible command-line tool for ROS 2.
-
-options:
-  -h, --help            show this help message and exit
-  --use-python-default-buffering
-                        Do not force line buffering in stdout and instead use
-                        the python default buffering, which might be affected
-                        by PYTHONUNBUFFERED/-u and depends on whatever stdout
-                        is interactive or not
-
-Commands:
-  action     Various action related sub-commands
-  bag        Various rosbag related sub-commands
-  component  Various component related sub-commands
-  daemon     Various daemon related sub-commands
-  doctor     Check ROS setup and other potential issues
-  interface  Show information about ROS interfaces
-  launch     Run a launch file
-  lifecycle  Various lifecycle related sub-commands
-  multicast  Various multicast related sub-commands
-  node       Various node related sub-commands
-  param      Various param related sub-commands
-  pkg        Various package related sub-commands
-  run        Run a package specific executable
-  security   Various security related sub-commands
-  service    Various service related sub-commands
-  topic      Various topic related sub-commands
-  wtf        Use `wtf` as alias to `doctor`
-
-  Call `ros2 <command> -h` for more detailed usage.
-  
 ```
 
-输入`ros2`的响应如上图所示，说明ros2的指令已经可以使用，即ros2安装成功。
+若输出 ROS2 版本信息，说明安装成功。示例输出如下：
 
-到这，ros2就算是安装完成了。
+![image-20260427122311546](./飞行器ros2激光slam方案.assets/image-20260427122311546.png)
 
-### 创建工作空间
+------
 
-我们需要新建一个文件夹作为我们ros2的工作空间。
+## 第四章 创建 ROS2 工作空间
 
-打开终端依次输入以下指令即可
+### 4.1 创建工作空间目录
+
+执行以下命令创建 ROS2 工作空间目录：
 
 ```bash
-mkdir ros2_ws   #在主文件夹下创建一个文件夹 ros2_ws
-
-cd ~/ros2_ws    #跳转到ros2_ws这个目录中
-
-mkdir src       #在ros2_ws中创建一个文件夹src用于存储你未来写的所有功能包
-
-colcon build    #在ros2_ws这个目录下编译
+mkdir -p ~/ros2_ws/src  # 在主目录下创建 ros2_ws 文件夹及其子目录 src
+cd ~/ros2_ws            # 切换到 ros2_ws 目录
 ```
-终端响应如图所示                                                ![屏幕截图 2025-11-10 045633](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20045633.png)
 
-打开文件夹可以发现，主文件夹中多了`ros2_ws`文件夹![屏幕截图 2025-11-10 045715](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20045715-1762724391098-12.png)
+### 4.2 编译空工作空间
 
-`ros2_ws`中除了我们创建的文件夹`src`,还有三个文件夹，那就是编译生成的文件![屏幕截图 2025-11-10 045821](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20045821.png)
+执行以下命令编译工作空间：
 
-至此，这个`ros2_ws`文件夹就是我们创建好的工作空间。
+```bash
+colcon build
+source install/setup.bash  # 编译后执行，后续配置环境变量后无需手动输入
+```
 
-### 配置环境变量
+编译完成后，主目录中会生成 `ros2_ws` 文件夹：
 
-具体操作如下，先跟着操作，我们边操作边解释
+![屏幕截图 2025-11-10 045715](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20045715.png)
 
-1. 打开终端输入指令如下
+`ros2_ws` 目录中除了我们创建的 `src` 文件夹外，还会生成三个编译产物目录：
+
+![屏幕截图 2025-11-10 045821](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20045821.png)
+
+### 4.3 设置工作空间环境变量
+
+执行以下命令设置工作空间环境变量：
+
+```bash
+echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+```
+
+上述操作本质上是在 `~/.bashrc` 文件中添加 `source ~/ros2_ws/install/setup.bash` 命令。也可以通过手动编辑方式添加：
+
+1. 打开终端，执行以下命令：
 
    ```bash
    nano ~/.bashrc
    ```
+回车后如下：![屏幕截图 2025-11-10 215634](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20215634.png)
+2. 在文件末尾添加：
 
-   回车后如下：                                                    ![屏幕截图 2025-11-10 215634](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-10%20215634.png)
+   ```
+   source ~/ros2_ws/install/setup.bash
+   ```
+![屏幕截图 2025-11-11 115422-1762836263234-3](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-11%20115422-1762836263234-3.png)
+3. 按 `Ctrl+O`回车保存，然后按 `Ctrl+X` 退出。
 
-> 这里解释一下，nano是ubuntu系统自带的一个文本编辑器，这个指令其实就是用nano这个文本编辑器打开`.bashrc`这个文件。
+手动编辑的效果与执行 `echo` 命令的效果完全相同。
+
+至此，环境变量配置完成。大家跟着敲敲敲，敲了这么多指令，可能都云里雾里根本不知道自己在干啥，为了帮助大家深入理解上述操作的原理，下面对相关概念和技术机制进行详细说明。
+
+> ### Shell 与 .bashrc 文件详解
 >
-> 这个时候又有人要问了`.bashrc`是个什么玩意啊，咋还'.'开头呢？这个点开头说明它是一个隐藏文件，你在文件夹中是找不到它的。而`.bashrc` 呢是 **Shell 的运行时配置文件**，当启动一个**交互式、非登录**的Shell时，会自动读取并执行 `~/.bashrc` 文件中的命令
+> #### 1. 什么是 Shell？
 >
-> 这个时候又又又有人要问了，shell又是什么呢？**Shell 就是一个接收用户命令，并将其传递给操作系统来执行的程序。** 它是用户与操作系统内核之间的接口。简单说shell是一个翻译官，会把你鼠标点击（图形界面shell）啊，输入的指令（命令行shell）啊，这些人为操作翻译成计算机能读懂的语言，从而去执行对应的事件。而shell的配置文件`.bashrc`，在启动一个**交互式、非登录**的 Shell 时，会自动读取并执行 `~/.bashrc` 文件中的命令，例如每次打开终端，都会执行`~/.bashrc` 文件中的命令。
+> **Shell** 是操作系统内核与用户之间的接口程序，它接收用户输入的命令（如在终端中敲入的指令或图形界面中的点击操作），将这些命令翻译成操作系统能理解的指令，并交由内核执行。
+>
+> 简单来说，Shell 就像一位"翻译官"：用户通过它输入自然语言风格的命令，Shell 负责将这些命令转换为计算机能理解的语言并执行。从功能划分，Shell 可分为：
+>
+> - **命令行 Shell**：如 Bash、Zsh 等，通过文本命令交互
+> - **图形界面 Shell**：如 GNOME、KDE 等，通过桌面图标、窗口、菜单交互
+>
+> #### 2. 什么是 .bashrc？
+>
+> `.bashrc` 是 Bash Shell 的运行时配置文件，其特点如下：
+>
+> | 特性 | 说明 |
+> |------|------|
+> | 隐藏文件 | 文件名以 `.` 开头，在文件管理器中默认不显示 |
+> | 位置 | 位于用户主目录下（`~/.bashrc`） |
+> | 触发条件 | 启动**交互式、非登录** Shell 时自动执行 |
+>
+> 这意味着：每次打开一个新的终端窗口，系统都会自动读取并执行 `.bashrc` 文件中的所有命令。
+>
+> #### 3. 什么是 nano 编辑器？
+>
+> `nano` 是 Ubuntu 系统自带的文本编辑器。使用 `nano ~/.bashrc` 命令可以打开 `.bashrc` 文件进行编辑。编辑完成后，按 `Ctrl+O` 保存，`Ctrl+X` 退出。
+>
+> ### ROS2 工作空间环境配置详解
+>
+> #### 1. `source` 命令的作用
+>
+> `source` 是 Shell 内建命令，用于在**当前 Shell 环境中**读取并执行指定文件中的命令。与直接运行脚本不同，`source` 执行过程中的所有环境变量修改都会保留在当前会话中。
+>
+> 理解方式：执行 `source 脚本.sh` 等同于将脚本中的所有命令逐行敲入当前终端执行。
+>
+> #### 2. `setup.bash` 文件的作用
+>
+> 当使用 `colcon build` 编译 ROS2 工作空间后，系统会在 `install` 目录下生成多个环境设置脚本，其中最重要的是 `setup.bash`。
+>
+> 执行 `source ~/ros2_ws/install/setup.bash` 后，该脚本会完成以下工作：
+>
+> **（1）添加工作空间到 ROS2 环境**
+>
+> - 使工作空间中编写的**功能包**、**节点**、**消息**、**服务**等能被 ROS2 系统识别和使用
+>
+> **（2）设置关键环境变量**
+>
+> | 环境变量 | 作用 |
+> |----------|------|
+> | `ROS_PACKAGE_PATH` | 添加工作空间路径，使 `ros2 run`、`ros2 launch` 等命令能定位到你的功能包 |
+> | `PATH` | 添加 `install` 目录下可执行文件路径，使你可直接运行编写的节点 |
+> | `LD_LIBRARY_PATH` | 添加 `install` 目录下库文件（.so）路径，确保运行时能找到依赖库 |
+> | `PYTHONPATH` | 添加 Python 模块路径，便于 Python 解释器导入 ROS2 Python 包 |
+>
+> **（3）启用命令自动补全**
+>
+> - 为自定义包、节点、launch 文件等提供 `ros2` 命令的自动补全功能
+>
+> #### 3. 为什么要写入 .bashrc？
+>
+> 由于 `source` 命令的效果仅在**当前终端会话**中有效——关闭终端后，所有环境变量设置都会丢失。因此，如果每次打开新终端都需要手动执行 `source` 命令，这会非常繁琐。
+>
+> 将 `source ~/ros2_ws/install/setup.bash` 写入 `.bashrc` 文件后，每次打开新终端时，系统会自动执行该命令，从而自动加载 ROS2 工作空间的环境变量。
+>
+> ### 小结
+>
+> 所谓"环境配置"，本质上是通过一系列设置，将原本需要手动重复执行的操作改为自动执行，从而简化开发流程、提升效率。回顾本章内容，环境配置的具体目标就是：**使 `source ~/ros2_ws/install/setup.bash` 命令能够在每次打开新终端时自动执行**，省去手动重复输入的繁琐过程。
+>
+> 实现这一目标的途径是：将上述 `source` 命令写入 `.bashrc` 文件。这样，每次启动终端时，系统会自动读取并执行 `.bashrc`，从而自动加载 ROS2 工作空间的环境变量。
+> 
 
-2. 用nano打开`.bashrc`后，在这个文件的最下方添加下面这条指令
+------
+
+## 第五章 安装 N10 雷达驱动
+
+本章内容皆可参考轮趣科技官方的说明文档：[镭神雷达LSLidar的ROS2驱动使用说明20240228](https://github.com/Flightsquadyeah/The-SLAM-of-Raspberrypi5b-and-ROS2-and-N10radar/blob/main/Instruction/镭神雷达LSLidar的ROS2驱动使用说明20240228.pdf)进入我的Github组可前往连接直接查看。当然该文档也可在配套文件`Instruction`文件夹里找到。
+
+### 5.1 获取驱动功能包
+
+将LSLIDAR_X_ROS文件夹拷贝到用户的工作空间的src目录下，该文件夹在配套文件的`Pakage`文件夹里![屏幕截图 2025-11-16 183242](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20183242.png)
+
+### 5.2 安装驱动依赖
 
 ```bash
-source ~/ros2_ws/install/setup.bash
+sudo apt install -y python3-colcon-common-extensions
+
+sudo apt install -y ros-jazzy-diagnostic-updater
+
+sudo apt install -y libpcap-dev
 ```
-如下：
-![屏幕截图 2025-11-11 115422](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-11%20115422-1763147541491-1.png)
 
-> 这个地方我其实已经写到8000字了，但是我没保存，他又回到了这个3000多字的地方，我有点崩溃了[哭]，气死我了。不多说了，继续写吧。
+### 5.3 驱动目录结构
 
-在添加上这行指令后，我们`ctrl`+`o`写入保存，然后`ctrl` +`x`退出，整个环境变量就算配置完成了。
+克隆完成后，驱动目录结构如下：
 
+```
+LSLIDAR_X_ROS2-20240228/
+├── src/
+│   ├── lslidar_driver/
+│   │   ├── launch/          # 启动文件（lsm10/lsm10p/lsn10/lsn10p等型号）
+│   │   ├── params/          # 参数配置文件（yaml）
+│   │   ├── src/             # 源码（input.cc、lslidar_driver.cc等）
+│   │   ├── include/         # 头文件（input.h、lslidar_driver.h等）
+│   │   ├── rviz/            # RViz配置文件
+│   │   ├── CMakeLists.txt   # CMake配置文件
+│   │   └── package.xml      # 包配置文件
+│   ├── lslidar_msgs/        # 自定义消息定义（LslidarScan、LslidarPoint等）
+│   ├── README.md            # 说明文档
+│   ├── version.txt          # 版本信息
+│   ├── wheeltec_udev.sh     # Udev规则脚本
+│   └── 镭神Lsx雷达旋转角度.png  # 雷达旋转角度说明图
+└── wheeltec_lidar.launch.py # 启动文件（WHEELTEC镜像专用）
+```
 
+------
 
-**我知道大家可能不是很能理解为什么要这样做，接下来就给大家解释一下：**
+## 第六章 配置雷达串口
 
-> 1. 首先，`source`指令是什么呢？`source` 是一个 **Shell 内建命令**，它的作用是**在当前 Shell 环境中读取并执行文件中的命令**。你可以把它理解成“复制粘贴”。当你使用 `source` 运行一个脚本时，就好像你把脚本文件里的所有内容，一行一行地敲到当前的终端里执行一样。
+### 6.1 查找雷达串口号
+
+将 N10 雷达通过转接板 USB 连接到树莓派，然后在终端查看：
+
+```bash
+ls /dev/ttyUSB* /dev/ttyACM*
+```
+
+通常输出类似：
+
+```
+/dev/ttyUSB0
+```
+
+或
+
+```
+/dev/ttyACM0
+```
+
+> 💡 如果没有任何输出，说明 USB 转串口驱动未加载。N10 雷达使用 CH9102（我们用的） 或 CH343 或 CP2102 芯片，Ubuntu 24.04 通常自带驱动。如果未识别，尝试：
 >
-> 2. `~/ros2_ws/install/setup.bash`这个文件是个什么：当你 **编译（colcon build）** 一个 ROS 2 工作空间（例如 `~/ros2_ws`）后，会在 `install` 目录下生成一系列环境设置脚本。其中 `setup.bash` 就是最重要的一个。简单说，这是一个脚本文件，里面的指令可以使我们工作空间中我们自己写的功能包能为ROS2所用，可以通过ROS2调用这些功能包。下面是AI的解释：
+> ```bash
+> sudo apt install linux-firmware
+> sudo reboot
+> ```
+
+### 6.2 添加串口权限
+
+```bash
+sudo usermod -aG dialout $USER
+sudo chmod 666 /dev/ttyUSB0
+```
+
+> ⚠️ 添加用户组后需要**注销重新登录**或**重启**才能生效。
+
+### 6.3 配置串口别名（推荐）
+
+串口号（ttyUSB0、ttyUSB1 等）在重新插拔后可能变化，建议配置固定别名：
+
+> 串口别名是什么：简单来说，**串口别名就是一个由你自定义的、固定的设备名字**，用来代替系统自动分配的那些容易变化的串口设备文件（比如 `/dev/ttyUSB0`、`/dev/ttyUSB1`）。
 >
->    > 这个脚本的主要作用是：
->    >
->    > 1. **将自定义工作空间添加到 ROS 2 环境**
->    >    - 让你在工作空间中自己编写的 **包**、**节点**、**消息**、**服务** 等能够被 ROS 2 系统识别和使用。
->    > 2. **修改关键环境变量**
->    >    - **`ROS_PACKAGE_PATH`**：将你的工作空间路径添加进去，这样 `ros2 run`、`ros2 launch` 等命令才能找到你的包。
->    >    - **`PATH`**：将你的 `install` 目录下的可执行文件（如你编写的节点）路径添加进去，这样你可以在终端中直接运行它们。
->    >    - **`LD_LIBRARY_PATH`**：将你的 `install` 目录下的库文件（.so 文件）路径添加进去，这样运行时可以找到依赖的库。
->    >    - **`PYTHONPATH`**：如果你有 Python 包，它会将 Python 模块的路径添加进去，这样 Python 解释器可以导入你的 ROS 2 Python 模块。
->    > 3. **设置 Shell 自动补全**
->    >    - 为你的自定义包、节点、launch 文件等提供 `ros2` 命令的自动补全功能。
+> 为什么要串口别名呢？树莓派获取雷达数据，肯定需要雷达接入树莓派的串口，而雷达驱动的配置中需要配置确定的串口名称，用于确定接收雷达数据的串口具体是哪一个。如若不设置串口别名就会出现如下情况：
 >
-> 3. 最后总结下来，我们每次打开新的终端，使用工作空间中的功能包时，都要重新输入下方这条指令：
->
->    ```bash
->     source ~/ros2_ws/install/setup.bash
->    ```
->
->     因为`source`指令只在当前shell中生效，新的终端就是新的shell，要重新去启用脚本才会生效。
->
->    而将这行指令写入，就可以一劳永逸了，每次进入终端，通过`~/.bashrc`就可以自动执行这行`source`代码，而不需要每次手动输入。听我解释可能大家还是没法听懂，这里我也用AI生成了详细的解释：
->    
->    >   #### 为什么需要把它写入 `.bashrc`？
->    >
->    >  **为了方便，实现“一次设置，永久生效”。**
->    >
->    >  如果没有这一行，你会遇到以下麻烦：
->    >
->    >  1. **每次新开终端都要手动执行**：
->    >
->    >  ```bash
->    >   source ~/ros2_ws/install/setup.bash
->    >  ```
->    >
->    >  
->    >
->    >    否则，在新终端里输入 `ros2 run my_package my_node`，系统会告诉你找不到 `my_package`。
->    >
->    >  2. **脚本无法运行**：任何依赖于你自定义 ROS 2 包的脚本，在新终端中都会因为找不到包而失败。
->    >
->    >  **写入 `.bashrc` 后**，每次你打开一个新的终端（非登录式 Shell），系统都会自动为你配置好 ROS 2 工作空间的环境。你无需任何手动操作，就可以直接使用你工作空间里的所有功能。
->    >
->    > --------
->    >
->    >  #### 工作流程示例
->    >
->    >  假设你正在开发一个名为 `my_robot` 的 ROS 2 项目：
->    >
->    >  1. **编写代码**：在 `~/ros2_ws/src` 下创建你的包 `my_robot`。
->    >
->    >  2. **编译工作空间**：
->    >
->    > ```bash
->    >   cd ~/ros2_ws
->    >    colcon build
->    > ```
->    >
->    >    （这会在 `~/ros2_ws/install` 目录生成 `setup.bash` 等文件）
->    >
->    >  3. **测试运行**：
->    >
->    >  - 如果你**没有**在 `.bashrc` 中配置，你需要先：
->    >
->    >   ```bash
->    >      source ~/ros2_ws/install/setup.bash
->    >   ```
->    >
->    > - 然后才能：    
->    >
->    >   ```bash
->    >       ros2 launch my_robot robot.launch.py
->    >   ```
->    >
->    >  4. **自动配置（通过 `.bashrc`）**：
->    >
->    >  - 当你把 `source ~/ros2_ws/install/setup.bash` 写入 `.bashrc` 并重新加载后。
->    >  - 下次你打开终端，直接输入 `ros2 launch my_robot robot.launch.py` 就能成功，因为环境已经自动设置好了。
->    
->    
-
-
-
-**“不知道大家读到这里，究竟有没有理解。其实没理解也没关系，大家跟着继续往下走就可以，干中学，干着干着你就慢慢理解了”**
-
---------
-
-
-
-## 建图
-
-### 前言
-
-前面，我们已经将所有的前置工作完成了，接下来就到了最关键的一步：**建图**。为了不至于接下来讲的内容，大家一点理解不了，在具体操作之前我先简单说几句。大家开始学习树莓派+ROS2建图之前，应该是已经直接连接飞控使用过雷达了，不知道大家有什么感受，但我是有些感受的：雷达数据太多，难以处理，人为去写出完美的数据处理算法过于困难，并且单片机的算力不够。那我们现在引入树莓派+ROS2建图的方法就解决了这些问题，树莓派算力强大，解决了算力问题；并且ROS2系统可以直接调用已经被别人开发完善好的算法包，不需要我们去花那么多时间去开发一个算法，可以直接拿过来，解决了算法的问题。
-
-而总结下来，建图归根到底，就是把雷达的点云数据处理成周围环境的大致地图，从而确定飞机在整个环境中的方向，甚至是自身的姿态（自旋姿态）。那么建图的过程的轮廓就大致出来了：
-
-1. 使树莓派获取雷达数据
-2. 调用算法包处理雷达数据
-3. 配置参数，建出地图。
-
-大家对建图应该已经有了一定的了解了，那我们就按照这个过程开始吧。
-
-
-
-> **另外声明：** 本文所讲建图方法是存在bug的，据赵立凯所言是“一个BUG和另一个BUG同时存在导致没有BUG”，就是说我们的建图方案并非社区普遍认可的完美方案，因算法参数设置问题，我们引入了另一个功能包来解决这个问题，相当于我有两个本应该能拼在一起的积木，因为我们不会拼起来，我们直接用胶粘起来了。但是我们的方案是完全可用的，以下也仅面向结果讲解教学，这里提醒大家一定不要过度依赖本文，一定要保持自己的思考。
-
-### 驱动雷达
-
-这一步其实就是安装雷达的驱动功能包，但是在安装之前需要完成很重要的一步**串口别名**。
-
-#### 串口别名
-
-##### 简单介绍
-
-首先，串口别名是什么：简单来说，**串口别名就是一个由你自定义的、固定的设备名字**，用来代替系统自动分配的那些容易变化的串口设备文件（比如 `/dev/ttyUSB0`、`/dev/ttyUSB1`）。
-
-其次，为什么要串口别名呢？树莓派获取雷达数据，肯定需要雷达接入树莓派的串口，而雷达驱动的配置中需要配置确定的串口名称，用于确定接收雷达数据的串口具体是哪一个。如若不设置串口别名就会出现如下情况：
-
 > 当你插入USB转串口设备时，系统会自动分配设备名称：
 >
 > ```bash
@@ -460,224 +557,286 @@ source ~/ros2_ws/install/setup.bash
 > IMU  → /dev/ttyUSB0  # 完全混乱！
 > ```
 
-**另外，要说明：** 我们连接雷达与树莓派的转接板用的CH9102F（至少我们现在用的是）
+**第一步：查看雷达 USB 设备信息**
 
-而串口别名具体需要怎么做呢，这里先给大家附上一些串口别名的资料（文件夹中也有），大家可以跟着资料学习，当然接下来我也会带着大家一起给雷达串口别名。
+设置别名需要获取设备的四个关键信息：**厂商ID（idVendor）、产品ID（idProduct）、Kernel名称、串口号（Serial）**。
 
-> **串口别名资料：**
->
-> 【超级会员V2】通过百度网盘分享的文件：串口别名通用教程
-> 链接:https://pan.baidu.com/s/169ZGI_IaWQd0Lvxk9TP8yQ?pwd=7736 
-> 复制这段内容打开「百度网盘APP 即可获取」
->
-> 串口别名通用教程
-> https://alidocs.dingtalk.com/i/p/yr9xmyAdgZWmEOejBYmaEgxWBBaAomNA
-> 常见串口问题处理教程与驱动工具脚本文件
-> https://pan.baidu.com/s/1wwWbABlA9GNYzFDnGTEDnQ
-
-##### **串口别名具体操作：**
-
-1.  **确认设备信息**
-
-   设置别名需要获取设备的四个关键信息：**厂商ID（idVendor）、产品ID（idProduct）、Kernel名称、串口号（Serial）**。
-
-   - **查看厂商ID和产品ID**
-     在终端中输入 `lsusb` 命令。
-
-     - 找到 `Silicon Labs CP210x UART Bridge` 或 `Qinheng Electronics` 行。
-     - 其格式为 `ID xxxx:yyyy`，其中 `xxxx` 是**厂商ID**，`yyyy` 是**产品ID**。
-     - **默认值**：
-       - CP2102: `10c4:ea60`
-       - CH9102: `1a86:5544`
-
-     ![img](https://alidocs.dingtalk.com/core/api/resources/img/5eecdaf48460cde5e514821326e7d3fccd36b92fa40614229776cf92cbf18abaee4c06ae3d0e3b1f65a117e969287064d39ac8e4104a9c076dc18ea1499b33f4249e41b500b7a24f04a0e243af1624de8dfb3320e1f54e28bbb8e147348d6c36?docKey=v9kqD4pXb8AMqVxe)
-
-   - **查看Kernel名称**
-     在终端中输入以下命令之一（我们一般都用第二行的命令，无需安装驱动使用CH9102）：
-
-     ```bash
-     ll /dev | grep ttyUSB    # 通常用于CP2102
-     ll /dev | grep ttyACM    # 通常用于未装驱动的CH9102
-     ll /dev | grep ttyCH343  # 通常用于已安装驱动的CH9102
-     ```
-
-     输出结果中的 `ttyUSB0`、`ttyACM1` 等即为Kernel名称。
-
-     ![img](https://alidocs.dingtalk.com/core/api/resources/img/5eecdaf48460cde5e514821326e7d3fccd36b92fa40614229776cf92cbf18abaee4c06ae3d0e3b1f65a117e9692870643f42ea030b2a385382d0d44adf931d360614a3cbac6d7e2514ba858a8ec779a08f2b076bb247252aa8af4430009de0b1?docKey=v9kqD4pXb8AMqVxe)
-
-     ![img](https://alidocs.dingtalk.com/core/api/resources/img/5eecdaf48460cde5e514821326e7d3fccd36b92fa40614229776cf92cbf18abaee4c06ae3d0e3b1f65a117e969287064b6bcfa9b3e9be69a0921d50c9b9569107e3eb2c0268384cbc46e7fd5dff7326083532c157876b289a5f44275aa76f220?docKey=v9kqD4pXb8AMqVxe)
-
-   - **查看串口号（Serial）**
-     使用 `udevadm` 命令查询，将 `/dev/ttyUSB0` 替换为您的实际Kernel名称。
-
-   ```bash
-   sudo udevadm info /dev/ttyACM1 | grep ID_SERIAL_SHORT
-   ```
-
-   输出示例：`E: ID_SERIAL_SHORT=0001`
-
-   ![img](https://alidocs.dingtalk.com/core/api/resources/img/5eecdaf48460cde5e514821326e7d3fccd36b92fa40614229776cf92cbf18abaee4c06ae3d0e3b1f65a117e96928706434f1d7c76ad62041aed68604c3e6ec7fbde7b2e63715b11c9840fb766a404bda2a7e75397ee794112c7cc62e6d91332a?docKey=v9kqD4pXb8AMqVxe)
-
-   ![img](https://alidocs.dingtalk.com/core/api/resources/img/5eecdaf48460cde5e514821326e7d3fccd36b92fa40614229776cf92cbf18abaee4c06ae3d0e3b1f65a117e96928706496f86fbdd2d56b7735914b85cde1c77f07fcfc3688fb5508f5d97c8ece2966754beb97f86be3267807afbbdd4225fe9b?docKey=v9kqD4pXb8AMqVxe)
-
-2. **手动创建别名**
-
-   你可以通过编写一条`udev`规则命令来手动创建别名（也可以直接在`/etc/udev/rules.d`这个文件夹中创建一个`.rules`文件，这里不教了，只教指令别名）。
-
-   ```bash
-   sudo echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="0001", MODE:="0777", GROUP:="dialout", SYMLINK+="wheeltec_laser"' > /etc/udev/rules.d/wheeltec_lidar.rules   
-   ```
-
-   ![img](https://alidocs.dingtalk.com/core/api/resources/img/5eecdaf48460cde5e514821326e7d3fccd36b92fa40614229776cf92cbf18abaee4c06ae3d0e3b1f65a117e96928706440de9c9553f2c2e8c61035a75d01ca26cdef3da326c797d719a4f4b4221cb5da8076f29ac708f435606601fe23b54967?docKey=v9kqD4pXb8AMqVxe)
-
-   > 这里图片与代码不符啊，以指令为准吧，但是如果你安装了驱动，`KERNEL=="ttyUSB*"`确实要这么写(但我知道，你应该没装)。
-
-   **命令参数解释：**
-   
-   - `KERNEL=="ttyACM*"`: 匹配设备内核名称。
-   - `ATTRS{idVendor}=="1a86"`: 匹配厂商ID。
-   - `ATTRS{idProduct}=="55d4"`: 匹配产品ID。
-   - `ATTRS{serial}=="0001"`: **匹配串口号（关键区分项）**。
-   - `MODE:="0777"`: 设置设备权限为所有用户可读可写可执行。
-   - `GROUP:="dialout"`: 将设备归属到`dialout`用户组。
-   - `SYMLINK+="wheeltec_laser"`: **创建别名**，这是最核心的部分。
-
-   **生效方法：** 执行命令后，**重新拔插**USB设备，别名即可生效。
-
-   
-
-> **注意**：如若系统连接多个相同型号的设备，需要在Windows下为每个设备赋予唯一的串口号来区分设备。（用到时，自己去看资料吧）
-
-
-
-#### 安装雷达驱动
-
-> 我会把名为`LSLIDAR_X_ROS`的文件夹与驱动下载的资料放在一个叫`雷达驱动`的文件夹里，其中驱动安装资料讲的很详细，下面我只带大家做必要的操作，多余不演示，请自行查阅资料学习。
->
-> 如下：                                                                                                                  ![屏幕截图 2025-11-15 041120](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20041120.png)![屏幕截图 2025-11-16 182940](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20182940.png)
-
-1. 将LSLIDAR_X_ROS文件夹拷贝到用户的工作空间的src目录下：                ![屏幕截图 2025-11-16 183242](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20183242.png)
-
-   > 大家可以通过蓝牙，U盘，或者用树莓派登录QQ等方式把我发送的文件转移至树莓派中。
-
-   
-
-   编译前需要确认以下依赖已经安装在系统中： 
-
-   ```bash
-   sudo apt install python3-colcon-common-extensions
-   
-   sudo apt-get install ros-jazzy-diagnostic-updater
-   
-   sudo apt-get install libpcap-dev
-   ```
-
-2. 编译工作空间`colcon build`
-
-   ```bash
-   cd ~/ros2_ws
-   
-   colcon build
-   ```
-
-   其实编译完了就可以使用了，但是还是要讲一下这个文件
-
-3. 这个文件的文本框架是这样的：                                                                       ![屏幕截图 2025-11-15 042209](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20042209.png)![屏幕截图 2025-11-15 042249](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20042249.png)
-
-   雷达的启动文件均在lslidar_driver目录下，用户需要修改的参数如雷达的串口号、雷达屏蔽角度、网口雷达的IP地址 以及frame_id、Topic 名称等，均在lslidar_driver/params 文件中修改。     
-
-4. 参数修改：我们用的是**N10**的雷达，参数修改文件为lidar_driver\params\lidar_uart_ros2\lsn10.yaml,如下：
-
-   ![屏幕截图 2025-11-15 044022](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20044022.png)
-
-   其中串口雷达启动文件默认的雷达串口号为/dev/wheeltec_laser，即默认使用串口别名，这就是我带着大家给雷达串口别名为`wheeltec_laser`的原因，这样这个文件就不用改了如果大家串口别名不是`wheeltec_laser`,需要把下方这个参数设置成你的串口别名。![屏幕截图 2025-11-15 044444](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20044444.png)其余参数大家可根据情况自行更改，不改也能用。
-
-5. **启动雷达**：
-
-   在终端中输入下方指令（树莓派必须接入雷达）：
-
-   ```bash
-    ros2 launch lslidar_driver lsn10_launch.py #我们用的是N10雷达所以用lsn10_launch.py这个启动文件
-   ```
-
-   如下所示显示成功启动表示雷达成功驱动    ![屏幕截图 2025-11-15 144519](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20144519.png)
-
-6. **在rviz2界面查看雷达点云**
-
-   在终端中输入rviz2
-
-   ```bash
-   rviz2
-   ```
-
-   会弹出这个界面![屏幕截图 2025-11-15 145118](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20145118.png)
-
-   大家点击左下角的`Add`选项![屏幕截图 2025-11-15 145328](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20145328.png)
-
-   点击后会出现这个界面，上方的`By display type`和`By topic`分别是通过类型添加与通过话题添加![屏幕截图 2025-11-15 145406](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20145406.png)
-
-   不管如何添加，都可以找到一个叫做`Laserscan`的东西，如下图                                               ![屏幕截图 2025-11-15 145813](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20145813.png)
-
-   选择后点击`OK` ![屏幕截图 2025-11-15 161323](./../../../Pictures/Screenshots/屏幕截图%202025-11-15%20161323.png)
-
-   这时左侧会多出`laserscan`的一栏                                                                  ![屏幕截图 2025-11-15 161425](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20161425-1763196003622-11.png)
-
-   之后，将图中箭头指出的`map`手动改为`laser`，将`Topic`选为`/scan`，点云便会如下图这样显现![屏幕截图 2025-11-15 164219](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20164219.png)
-
-   这里修改的**Fixed Frame**是坐标系， **Topic**是话题，为什么要分别设置成`laser`和`/scan`呢，是因为在雷达参数文件中，我们把雷达的坐标系与话题设置成了`laser`和`/scan`，大家可以回顾之前的内容看一看。
-
-### 调用算法包
-
-> ROS2建图的算法有很多，下面这个表格汇总了目前ROS环境下几种主流的雷达建图算法。
->
-> | 算法名称           | 核心技术                           | 主要传感器                        | 适用场景与特点                                               |
-> | :-------- | :-------- | :-------- | :-------- |
-> | **Gmapping**       | 基于粒子滤波的RBPF算法             | 2D激光雷达                        | **室内2D建图**的经典选择。代码简洁，在中小场景表现良好，但不适合大规模环境。 |
-> | **Cartographer**   | 基于图优化，使用子图匹配与回环检测 | 2D/3D激光雷达 (可融合IMU、里程计) | 适用于**大规模、大场景的2D/3D建图**。由Google开源，兼具建图和重定位功能，工程应用价值高。 |
-> | **LOAM/A-LOAM**    | 将里程计与建图拆解，特征提取与匹配 | 3D多线激光雷达                    | **室外3D激光SLAM**的经典算法。LOAM解决了雷达运动畸变和建图效率问题；A-LOAM是其用Eigen和Ceres简化的高级实现。 |
-> | **LIO-SAM**        | 紧耦合激光雷达-IMU融合，因子图优化 | 3D激光雷达 + IMU                  | 适用于**剧烈运动的场景**（如无人机、越野车）。通过融合IMU数据，有效去除运动畸变，提升鲁棒性。 |
-> | **HDL Graph SLAM** | 基于点云配准（如ICP，NDT）和图优化 | 3D激光雷达                        | 一种基于图优化的3D SLAM方法，支持回环检测。并有扩展支持**多机器人协同建图**的版本（如Multi-Robot-Graph-SLAM）。 |
->
-> 这些算法其实我们都可以使用，但是鉴于我们的硬件条件，还有就是因为本文主要讲解赵立凯的建图过程，我们这里只涉及Cartographer算法的使用，大家可以自行开发使用其他算法，或许会有更佳方案。
-
-#### 安装Cartographer算法包
-
-安装非常简单，输入以下指令就可以安装Jazzy版本的Cartographer算法包
+**查看Kernel名称**
+在终端中输入以下命令之一（因为转接板可能不同，你要自己尝试哪个是对的，我们一般都用第二行的命令，无需安装驱动使用CH9102）：
 
 ```bash
-sudo apt install ros-jazzy-cartographer ros-jazzy-cartographer-ros
+ll /dev | grep ttyUSB    # 通常用于CP2102
+ll /dev | grep ttyACM    # 通常用于未装驱动的CH9102
+ll /dev | grep ttyCH343  # 通常用于已安装驱动的CH9102
 ```
 
-安装完成后，输入下面指令进行检验
+![image-20260429053350058](./飞行器ros2激光slam方案.assets/image-20260429053350058.png)
+
+输出结果中的 `ttyUSB0`、`ttyACM0` 等即为Kernel名称。包括之后带有`ttyUSB`或`ttyACM0`的指令都已你们自己的Kernel名称修改，不要直接复制我给的指令。
+
+**查看厂商ID（idVendor）、产品ID（idProduct）、串口号（Serial）**
+
+```bash
+udevadm info --attribute-walk --name=/dev/ttyACM0 | grep -E "idVendor|idProduct|serial"
+```
+会返回以下内容：![image-20260429052032210](./飞行器ros2激光slam方案.assets/image-20260429052032210.png)
+
+记录我标红框中输出的的 `idVendor`、`idProduct` 和 `serial` 值。红框外的可能是因为我用的虚拟机的虚拟USB控制器，大家如果大家也不只显示这三项，不会判断也可用以下方式获取：
+
+> **查看串口号（Serial）**
+>
+> ```bash
+> sudo udevadm info /dev/ttyACM0 | grep ID_SERIAL_SHORT
+> ```
+>
+> **查看厂商ID和产品ID**
+>
+> ```
+> lsusb
+> ```
+>
+> ![image-20260429054038573](./飞行器ros2激光slam方案.assets/image-20260429054038573.png)
+>
+> - 找到 `Silicon Labs CP210x UART Bridge` 或 `Qinheng Electronics` 行。
+>
+> - 其格式为 `ID xxxx:yyyy`，其中 `xxxx` 是**厂商ID**，`yyyy` 是**产品ID**。
+>
+> - 💡 常见 USB 转串口芯片的 idVendor/idProduct：
+>
+>   - CH340/CH343/CH9102：`1a86` / `7523` 或 `1a86` / `55d3`
+>   - CP2102：`10c4` / `ea60`
+>   - FT232：`0403` / `6001`
+>
+>   请以你实际查到的为准。
+
+**第二步：创建 udev 规则**
+
+在终端输入以下内容（根据你的 kernel、idVendor 和、idProduct 和 serial 修改）：
+
+```bash
+sudo echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="0001", MODE:="0777", GROUP:="dialout", SYMLINK+="wheeltec_laser"' > /etc/udev/rules.d/wheeltec_lidar.rules
+```
+
+如显示权限不够就改为以下代码：
+
+```bash
+echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="0001", MODE:="0777", GROUP:="dialout", SYMLINK+="wheeltec_laser"' | sudo tee /etc/udev/rules.d/wheeltec_lidar.rules
+```
+
+> **命令参数解释：**
+>
+> - `KERNEL=="ttyACM*"`: 匹配设备内核名称。
+> - `ATTRS{idVendor}=="1a86"`: 匹配厂商ID。
+> - `ATTRS{idProduct}=="55d4"`: 匹配产品ID。
+> - `ATTRS{serial}=="0001"`: **匹配串口号（关键区分项）**。
+> - `MODE:="0777"`: 设置设备权限为所有用户可读可写可执行。
+> - `GROUP:="dialout"`: 将设备归属到`dialout`用户组。
+> - `SYMLINK+="wheeltec_laser"`: **创建别名**，这是最核心的部分。
+
+**第三步：使规则生效**
+
+```bash
+sudo udevadm control --reload-rules #重新加载 udev 规则
+sudo udevadm trigger  #触发规则
+```
+
+**第四步：验证别名**
+
+拔插雷达 USB 后执行：
+
+```bash
+ls -l /dev/wheeltec_laser
+```
+
+如果输出类似 `/dev/wheeltec_laser -> ttyUSB0`，说明别名配置成功，如下：
+
+![image-20260429054633674](./飞行器ros2激光slam方案.assets/image-20260429054633674.png)
+
+> **串口别名的实质：**
+>
+> 串口别名的过程，也就是我们在终端所输入的指令，本质就是在`/etc/udev/rules.d`这个文件夹中创建了一个名为`wheeltec_lidar.rules`文件。`rules.d`是存放**用户自定义规则**的文件夹，而我们写的`.rules`文件就是我们自定义的规则，这个规则的内容就是：
+>
+> ```bash
+> KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="0001", MODE:="0777", GROUP:="dialout", SYMLINK+="wheeltec_laser"
+> ```
+>
+> 也就说大家串口别名也可以在`/etc/udev/rules.d`中写一个名为`wheeltec_lidar.rules`的文件，文件中写入上面内容也可完成串口别名。当然其实我给出的指令实际就是执行以上的行为，只是压缩成了一行指令代为执行。
+
+### 6.4 修改雷达配置文件
+
+编辑 N10 雷达的 yaml 配置文件：
+
+```bash
+nano ~/ros2_ws/src/LSLIDAR_X_ROS2-20240228/src/lslidar_driver/params/lidar_net_ros2/lsn10_net.yaml
+```
+
+也可以不用nano，直接按照对应路径用各种编辑器打开，进行改写。
+
+修改参数如下：
+
+```yaml
+/lslidar_driver_node:
+  ros__parameters: 
+    frame_id: laser                                       #激光坐标
+    group_ip: 224.1.1.2
+    add_multicast: false 
+    device_ip: 192.168.1.200                   	            #雷达源IP
+    device_ip_difop: 192.168.1.102                          #雷达目的ip
+    msop_port: 2368                                         #雷达目的端口号
+    difop_port: 2369                                        #雷达源端口号
+    lidar_name: N10                                         #雷达选择:M10 M10_P M10_PLUS M10_GPS N10 L10 N10_P
+    angle_disable_min: 0.0                                  #角度裁剪开始值
+    angle_disable_max: 0.0                                  #角度裁剪结束值
+    min_range: 0.2                                          #雷达接收距离最小值
+    max_range: 200.0                                        #雷达接收距离最大值
+    use_gps_ts: false                                       #雷达是否使用GPS授时
+    scan_topic: /scan                                       #设置激光数据topic名称
+    interface_selection: net                             #接口选择:net 为网口,serial 为串口。
+    serial_port_: /dev/wheeltec_laser                              #串口连接时的串口号
+    high_reflection: false                                  #M10_P雷达需填写该值,若不确定，请联系技术支持。
+    compensation: false				                              #M10系列是否使用角度补偿功能
+    pubScan: true                                           #是否发布scan话题
+    pubPointCloud2: false                                    #是否发布pointcloud2话题
+    pointcloud_topic: /lslidar_point_cloud                  #设置激光数据topic名称
+#    pcap: /home/ls/1.pcap                                  #雷达是否使用pcap包读取功能
+#    in_file_name: /home/ls/1.txt                           #雷达是否使用txt文件读取功能
+```
+
+> ⚠️ `serial_port_` 必须与你实际的串口路径一致。如果没配置别名，就写 `/dev/ttyACM0`。
+>  ⚠️ `frame_id` 设为 `laser`，后续 Cartographer 配置要与此一致。
+
+------
+
+## 第七章 编译并测试雷达驱动
+
+### 7.1 编译驱动
+
+```bash
+cd ~/ros2_ws
+colcon build 
+source install/setup.bash
+```
+
+> 💡 如果编译报错缺少依赖，根据提示安装。常见依赖：
+>
+> ```bash
+> sudo apt install -y ros-jazzy-tf2-ros ros-jazzy-tf2-sensor-msgs
+> ```
+
+### 7.2 启动雷达
+
+```bash
+ros2 launch lslidar_driver lsn10_launch.py #我们用的是N10雷达所以用lsn10_launch.py这个启动文件
+```
+
+### 7.3 验证雷达数据
+
+**另开一个终端**，执行：
+
+```bash
+# 查看话题列表
+ros2 topic list
+
+# 查看雷达扫描话题
+ros2 topic echo /scan --once
+
+# 查看话题发布频率
+ros2 topic hz /scan
+```
+
+如果 `/scan` 话题有数据输出，且频率在 10Hz 左右，说明雷达驱动正常。
+
+### 7.4 用 RViz2 可视化
+
+```bash
+rviz2
+```
+
+![屏幕截图 2025-11-15 145118](./../资料/树莓派ros雷达建图资料（含markdawn原文，pdf，html格式的建图文字教程及其配套资料）/建图教程/飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20145118.png)
+
+在 RViz2 中：
+
+1. 点击左下角 `Add`![image-20260429062949693](./飞行器ros2激光slam方案.assets/image-20260429062949693.png)
+
+2. 选择 `By topic` → `/scan` → `LaserScan`![image-20260429063350567](./飞行器ros2激光slam方案.assets/image-20260429063350567.png)
+
+3. 将左侧 `Fixed Frame` 改为 `laser`
+
+   ![image-20260429063608163](./飞行器ros2激光slam方案.assets/image-20260429063608163.png)
+
+如果能看到各种颜色的激光扫描点，说明雷达完全正常工作。
+
+![屏幕截图 2025-11-15 164219](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20164219.png)
+
+------
+
+## 第八章 安装 Cartographer
+
+### 8.1 apt 安装（推荐）
+
+ROS2 Jazzy 已适配 Cartographer，可直接 apt 安装：
+
+```bash
+sudo apt update
+sudo apt install -y ros-jazzy-cartographer ros-jazzy-cartographer-ros
+```
+
+### 8.2 验证安装
 
 ```bash
 ros2 pkg list | grep cartographer
 ```
 
-返回以下即代表安装好了
+应输出：
 
-```bash
+```
+cartographer
 cartographer_ros
-cartographer_ros_msgs
 ```
 
-像这样                                                                    ![屏幕截图 2025-11-15 194455](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-15%20194455.png)
+### 8.3 安装地图保存工具
 
-#### 修改算法参数
+```bash
+sudo apt install -y ros-jazzy-nav2-map-server #该教程暂时用不到
+```
+### 8.4 克隆laser_scan_matcher功能包
 
-整个算法包需要修改的文件一共就两个,以下是它们的路径（就在你下载的Cartographer路径上）：
+一般在github上克隆，但是克隆很大概率失败，可能链接不对也可能网络问题。大家可以问问ai如何克隆，这里我把该功能包放在了配套文件的`Pakage`文件夹中，其中还有该功能包所需要的依赖。大家可以直接复制到工作空间的`src`文件夹里。
 
-1. /opt/ros/jazzy/share/cartographer_ros/launch/backpack_2d.launch.py
-2. /opt/ros/jazzy/share/cartographer_ros/configuration_files/backpack_2d.lua
+也可直接在Github获取，连接：[Package](https://github.com/Flightsquadyeah/The-SLAM-of-Raspberrypi5b-and-ROS2-and-N10radar/tree/main/Package)
 
-**大家不要直接修改**，最好是复制两个文件，重新另存为`mylaser_launch.py`和`mylaser.lua`然后存在原文件中。就像下面这样：![屏幕截图 2025-11-16 112900](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20112900.png)![屏幕截图 2025-11-16 112727](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20112727.png)
+![image-20260429070727347](./飞行器ros2激光slam方案.assets/image-20260429070727347.png)
 
-这里把参数修改完成后的两个文件的完整的代码给大家：
+直接复制到工作空间的`src`文件夹里：
 
-**mylaser.lua**
+![屏幕截图 2025-11-16 201451](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20201451.png)
+
+> 简单来说，`laser_scan_matcher` 的核心作用就是：**纯粹利用激光雷达的数据，来推算出机器人的位置和姿态（位姿）变化，充当机器人的“伪里程计”。**
+>
+> 接下来的算法配置文件中，会有一个名为odom的里程计坐标系，这个坐标系本应用惯导或者其他imu提供，但是我们没有这类硬件，就用该算法包充伪里程计代替惯导的作用，使建图更稳定减少飘逸。
+
+------
+
+## 第九章 配置 Cartographer 建图文件
+
+Cartographer 需要两个配置文件：**Lua 配置文件**（算法参数）和 **Launch 文件**（启动参数）。该建图文件也以上传至Github，在配套文件的`Package`文件夹里，可直接取用，建议按照以下流程自己配一下试一试：
+
+### 9.1 创建配置目录
+
+```bash
+mkdir -p ~/ros2_ws/src/cartographer_config/configuration_files
+```
+
+### 9.2 编写 Lua 配置文件
+
+```bash
+nano ~/ros2_ws/src/cartographer_config/configuration_files/n10_2d.lua
+```
+
+写入以下内容：
 
 ```lua
--- 包含必要的构建器文件
+- 包含必要的构建器文件
 include "map_builder.lua"           -- 地图构建器配置
 include "trajectory_builder.lua"    -- 轨迹构建器配置
 
@@ -743,241 +902,207 @@ POSE_GRAPH.constraint_builder.min_score = 0.65     -- 约束构建的最小分�
 
 -- 返回配置选项
 return options
+
 ```
 
-**mylaser_launch.py**
+**关键参数说明：**
+
+| 参数                                   | 值             | 说明                                    |
+| -------------------------------------- | -------------- | --------------------------------------- |
+| `tracking_frame`                       | `"laser"`      | 必须与雷达 yaml 中的 `frame_id` 一致    |
+| `published_frame`                      | `"base_link"`  | 发布的坐标系                            |
+| `provide_odom_frame`                   | `true`         | 无里程计时由 Cartographer 提供虚拟 odom |
+| `use_odometry`                         | `false`        | 无轮式里程计，设为 false                |
+| `use_imu_data`                         | `false`        | 无 IMU，设为 false                      |
+| `num_laser_scans`                      | `1`            | 一个激光雷达                            |
+| `min_range` / `max_range`              | `0.1` / `25.0` | N10 有效范围 0.1~25 米                  |
+| `use_online_correlative_scan_matching` | `true`         | 无里程计时必须开启，用于扫描匹配        |
+
+### 9.3 编写 Launch 文件
+
+```bash
+nano ~/ros2_ws/src/cartographer_config/launch/n10_cartographer.launch.py
+```
+
+写入以下内容：
 
 ```python
-"""
-  Copyright 2018 The Cartographer Authors
-  Copyright 2022 Wyca Robotics (for the ros2 conversion)
-
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
-"""
+import os
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
-import os
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+
 
 def generate_launch_description():
-    """
-    生成Cartographer SLAM系统的Launch描述
-    包含机器人模型发布、SLAM建图、占用栅格地图生成和可视化
-    """
+    cartographer_config_dir = os.path.join(
+        get_package_share_directory('cartographer_config'), 'configuration_files')
+    configuration_basename = LaunchConfiguration('configuration_basename')
 
-    # 启动参数：是否使用仿真时间
-    use_sim_time_arg = DeclareLaunchArgument(
-        'use_sim_time', 
-        default_value='False',
-        description='Use simulation (Gazebo) time if true'
-    )
+    cartographer_prefix = get_package_share_directory('cartographer_ros')
 
-    # URDF文件路径 - 机器人的模型描述文件
-    urdf_file = '/home/wzh/ros2_ws/src/fishbot_description/urdf/fishbot_base.urdf'
-    # 读取URDF文件内容
-    with open(urdf_file, 'r') as infp:
-        robot_desc = infp.read()
-
-    # robot_state_publisher节点：发布机器人状态和TF变换
-    robot_state_publisher_node = Node(
-        package='robot_state_publisher',      # 包名：机器人状态发布器
-        executable='robot_state_publisher',   # 可执行文件
-        parameters=[
-            {'robot_description': robot_desc},  # 机器人URDF描述
-            {'use_sim_time': LaunchConfiguration('use_sim_time')}  # 使用仿真时间参数
-        ],
-        output='screen'  # 输出到屏幕
-    )
-
-    # cartographer_node节点：核心SLAM算法节点
-    cartographer_node = Node(
-        package='cartographer_ros',           # 包名：Cartographer ROS接口
-        executable='cartographer_node',       # 可执行文件：Cartographer主节点
-        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],  # 使用仿真时间
-        arguments=[
-            '-configuration_directory',  # 配置文件目录参数
-            FindPackageShare('cartographer_ros').find('cartographer_ros') + '/configuration_files',  # 配置文件目录路径
-            '-configuration_basename',   # 配置文件名参数
-            'mylaser.lua'                # Cartographer配置文件
-        ],
-        remappings=[('echoes', 'horizontal_laser_2d')],  # 话题重映射：将echoes映射到horizontal_laser_2d
-        output='screen'  # 输出到屏幕
-    )
-
-    # cartographer_occupancy_grid_node节点：生成占用栅格地图
-    cartographer_occupancy_grid_node = Node(
-        package='cartographer_ros',           # 包名：Cartographer ROS接口
-        executable='cartographer_occupancy_grid_node',  # 可执行文件：占用栅格地图节点
-        parameters=[
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},  # 使用仿真时间
-            {'resolution': 0.05}  # 地图分辨率：0.05米/像素
-        ],
-        output='screen'  # 输出到屏幕
-    )
-
-    # rviz2节点：可视化工具
-    rviz_node = Node(
-        package='rviz2',                      # 包名：RViz2可视化工具
-        executable='rviz2',                   # 可执行文件
-        name='rviz2',                         # 节点名称
-        output='screen',                      # 输出到屏幕
-        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}]  # 使用仿真时间
-    )
-
-    # 返回Launch描述，包含所有节点和参数
     return LaunchDescription([
-        use_sim_time_arg,                     # 仿真时间参数
-        robot_state_publisher_node,           # 机器人状态发布器节点
-        cartographer_node,                    # Cartographer SLAM节点
-        cartographer_occupancy_grid_node,     # 占用栅格地图节点
-        rviz_node,                            # RViz2可视化节点
+        DeclareLaunchArgument(
+            'configuration_basename',
+            default_value='n10_2d.lua',
+            description='Lua配置文件名'),
+
+        DeclareLaunchArgument(
+            'use_rviz',
+            default_value='true',
+            description='是否启动RViz2'),
+
+        Node(
+            package='cartographer_ros',
+            executable='cartographer_node',
+            name='cartographer_node',
+            output='screen',
+            arguments=['-configuration_directory', cartographer_config_dir,
+                       '-configuration_basename', 'n10_2d.lua'],
+            remappings=[('scan', '/scan')]),
+            
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='static_transform_publisher',
+            arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'laser'],
+            ),
+
+        Node(
+            package='cartographer_ros',
+            executable='cartographer_occupancy_grid_node',
+            name='cartographer_occupancy_grid_node',
+            output='screen',
+            parameters=[{'resolution': 0.05}]),
+            
+        Node(
+            package='ros2_laser_scan_matcher',     # ros2 run 的第一个参数：包名
+            executable='laser_scan_matcher',         # ros2 run 的第二个参数：可执行文件名
+            name='laser_scan_matcher',              # 节点名称（建议设）
+            output='screen',                        # 日志输出到终端，方便看报错
+        ),
+           
+        Node(
+            condition=IfCondition(LaunchConfiguration('use_rviz')),
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen'),
     ])
 ```
 
-可以直接复制，**但是建议大家一定要和你修改前的文件对比一下，逐行读一下这两个代码，不懂的话可以问AI，包括我给你们的这两个代码都有注释，一定一定要理解！**
+### 9.4 创建 package.xml 和 CMakeLists.txt
 
-#### 添加机器人模型
-
-其实添加机器人模型不是必要，但是在`mylaser_launch.py`文件中有这么几行代码![屏幕截图 2025-11-16 175049](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20175049-1763287381911-20.png)
-
-这里有一串路径`/home/wzh/ros2_ws/src/fishbot_description/urdf/fishbot_base.urdf`,这个你现在肯定没有这个路径中的文件，所以会报错。这个是机器人模型的文件，我把它放在了这个资料的文件夹中，如下：                                                                                             ![屏幕截图 2025-11-16 180538](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20180538-1763287796864-24.png)![屏幕截图 2025-11-16 180624](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20180624-1763287816158-26.png)![屏幕截图 2025-11-16 180717](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20180717.png)
-
-大家直接在我给的资料里复制，把这个叫`fishbot_description`的文件，放到你的工作空间中的`src`文件夹中：![屏幕截图 2025-11-16 183528](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20183528.png)
-
-
-
-然后代码中的路径根据你的具体情况修改，就比如我的用户名是wzh你的不是肯定要改，还有你的工作空间名字根据具体情况具体修改，确保路径正确，指向`fishbot_description`文件夹中的`fishbot_base.urdf`文件。**修改完成后一定要编译工作空间**。
-
-编译完成后，在终端输入以下命令，下载所需的包，机器人模型就可以使用了
-
-```
-sudo apt update
-
-sudo apt install ros-jazzy-joint-state-publisher-gui
-```
-
-#### 加入laser_scan_matcher功能包
-
-`laser_scan_matcher` 是一个在机器人操作系统（ROS）中用于增量激光扫描配准的工具包。简单来说，它通过比较连续的激光扫描数据来估算机器人的运动。这个功能包其实本来是不需要存在的，之前给大家提过这个建图有BUG，这个功能包就是为了修复这个BUG，当然这个功能包理论上来说是可以优化掉的，我试了一下没有成功，所以还是按这个来讲。
-
-安装这个功能包需要用git克隆，但因为网络问题，很多时候克隆不成功。并且该功能包依赖`csm`库，`csm`库安装也十分麻烦。为此，我依然直接把两个文件放在了这份资料的文件夹中：                                                                                                              ![屏幕截图 2025-11-16 195552](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20195552.png) ![屏幕截图 2025-11-16 200155](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20200155.png)
-
-把这上面两个文件夹直接移到树莓派你的工作空间的`src`文件夹中，无需别的操作，编译就可以使用。![屏幕截图 2025-11-16 201451](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20201451.png)
-
-#### 启动建图
-
-我们所有的准备工作均已完成，接下来只需要输入几行指令便可启动建图
+首先，进入配置包目录：
 
 ```bash
-ros2 launch lslidar_driver lsn10_launch.py    #驱动雷达
-
-ros2 run ros2_laser_scan_matcher laser_scan_matcher #启动laser_scan_matcher功能包
-
-ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 base_link laser #手动将laser坐标系关联到base_link坐标系
-
-ros2 launch cartographer_ros mylaser_launch.py # 启动算法
+cd ~/ros2_ws/src/cartographer_config
 ```
 
-输完最后一行指令，会自动启动rviz2图形化界面，因为在我给出的`mylaser_launch.py`这个启动文件的代码中，我加入了rviz2节点启动代码。如果你是自己写的，没有加，那就手动在终端输入`rviz2`启动图形化界面![屏幕截图 2025-11-16 210726](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20210726.png)
+**创建 package.xml：**
 
-之前打开过一次rviz2，上次选择的laser坐标系，这次我们选择坐标系`map`![屏幕截图 2025-11-16 212845](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20212845.png)之前我们加入了`LaserScan`,接下来我们还需要添加三项：                                                                                                                               ![屏幕截图 2025-11-16 210921](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20210921.png)![屏幕截图 2025-11-16 211049](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20211049-1763298738328-43.png)
+```bash
+nano package.xml
+```
 
-分别是`Map`、`RobotModel`、`TF`,添加上之后，分别这样设置：
+粘贴以下内容：
 
-**Map**：话题选择**/map**![屏幕截图 2025-11-16 211610](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20211610-1763299279380-46.png)**RobotModel**：话题选择**/robot_description**![屏幕截图 2025-11-16 212256](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20212256-1763299431639-49.png)
+```xml
+<?xml version="1.0"?>
+<package format="3">
+  <name>cartographer_config</name>
+  <version>0.0.1</version>
+  <description>Cartographer configuration for N10 lidar</description>
+  <maintainer email="user@example.com">user</maintainer>
+  <license>Apache-2.0</license>
 
-**TF**:这个无需配置，我们之前所做的已经将TF坐标配置准确了，保证你的TF树是这样的就行：![屏幕截图 2025-11-16 212556](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20212556.png)
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-以上配置完成rviz2界面如下：![屏幕截图 2025-11-16 213059](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20213059.png)
+  <exec_depend>cartographer_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
-**这样，建图就完成了**。
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+```
 
---------
+编辑完成后，按 `Ctrl+O` 并回车写入，按`Ctrl+X`退出。
 
+**创建 CMakeLists.txt：**
 
+```bash
+nano CMakeLists.txt
+```
 
-## 建图的实际应用
+粘贴以下内容：
 
-大家一起学到这里，终于是把图建出来了，大家是否忘了我们原本的目的？建图并不是我们开始的目的，我们学习建图只是学习了一项工具，而建图是服务于我们的飞机，让我们的飞机飞得更准。那么接下来要做的就是使我们建图为飞机所用。
+```cmake
+cmake_minimum_required(VERSION 3.8)
+project(cartographer_config)
 
-这里就要简单说一下，我们目前飞机搭建的大致方案：凌霄飞控作为主控，集成IMU，控制飞机姿态与运动；树莓派根据我们给出的目标位置，借助雷达计算速度发送给飞控（垂直速度可以用原来的激光测高，也可以直接给树莓派接一个激光，直接在树莓派计算）。简单说，树莓派是大脑，负责计算处理传感器数据，发布指令；凌霄飞控是骨髓，通过树莓派的指令控制飞机飞行，并根据IMU稳定自身姿态，由树莓派与飞控共同组成我们飞机的神经系统，控制整个飞机
+find_package(ament_cmake REQUIRED)
 
-综上，我们需要做的，就是让树莓派把速度算出来，发送给飞控。实现该过程，需要我们写功能包，放进工作空间的`src`文件夹中。**功能包（Package）** 是ROS/ROS2中的基本软件组织单位，它包含了一组相关的文件，用于实现特定的功能模块，可以用C++或者Python去写，两者皆可。而我们需要写的基本功能包（实现定位）应包含以下功能：
+install(DIRECTORY configuration_files/
+  DESTINATION share/${PROJECT_NAME}/configuration_files)
 
-> 根据base_link和map的坐标关系，然后依据我们设定的航点坐标，实现pid输出速度。计算出速度后，我们还要把速度发送给飞控，这时候就要我们先把速度信息发送给/cmd_vel这个话题，然后通过订阅话题，使速度通过串口发送给树莓派。然后大家需要写一个自启动脚本，开机自启动所有的指令。
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch)
 
-建议大家将功能分开，写成三个功能包（我是这样写的）：
+ament_package()
+```
 
-1. 读取baselink和map的坐标关系，然后依据航点实现pid输出速度到话题/cmd_vel
-2. 将话题/cmd_vel中的速度，通过串口发送给飞机
-3. 自启动功能包（这个还要写一个脚本.sh文件，把这个脚本文件添加到系统中一个叫做**”启动应用程序“**的app中，如右图)![屏幕截图 2025-11-17 195215](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-17%20195215.png)
+编辑完成后，按 `Ctrl+O` 并回车写入，按`Ctrl+X`退出。
 
-当然我以上说的只是基本实现定位所需要的功能包。大家如果想拓展功能，那就要大家去写自己的功能包。只要你的硬件设备齐全，那么可供添加的功能就无穷无尽，只需你写出对应的功能包。
+### 9.5 编译配置包
 
-这个写功能包呢，我就不带着大家一步步的写了。说实话，我也不会写功能包，我现在也有点一知半解的，我能看懂但确实是不会写。我的功能包大多都是AI帮我写的，我现在也在学习自己去写一些功能包。说实话，在我看来，完全可以使用AI去创建功能包，因为AI可以瞬间写完你很久才能写完的东西，还写得比你好，见效快写完就能用。但一定要掌握合理的方法使用，不能完全依赖AI，大家要在使用AI的过程中，学习AI的代码，学习如何创建，如何写功能包，让AI的东西变成自己的东西。当然在下面我也会附上一些资料，供大家参考学习。
+```bash
+cd ~/ros2_ws
+colcon build
+source install/setup.bash
+```
 
-其实使用AI也有讲究，在这里教大家用AI有点抽象，其实也有我偷懒的成分在，这里就不去教大家怎么通过AI去创建功能包了。大家创建功能包的过程中遇到问题，可以直接现场请教学长，我不再多说了。
+------
 
-下面是ROS2相关资料，包括创建功能包的资料，大家可以查阅学习创建功能包：
+## 第十章 启动建图
 
-> 附件:【ROS2中的文件结构 - CSDN App】https://blog.csdn.net/piaoshisuiyue/article/details/142209658?sharetype=blog&shareId=142209658&sharerefer=APP&sharesource=2301_80708358&sharefrom=link
-> 【ROS2 学习（一）ROS2 简介与基本使用 - CSDN App】https://blog.csdn.net/qq_42994487/article/details/137206231?sharetype=blog&shareId=137206231&sharerefer=APP&sharesource=2301_80708358&sharefrom=link
-> 仅供参考，不需要记住，了解即可
-> 【ROS学习-2 工作空间文件结构和创建功能包 - CSDN App】https://blog.csdn.net/weixin_42820722/article/details/121325685?sharetype=blog&shareId=121325685&sharerefer=APP&sharesource=2301_80708358&sharefrom=link
-> 他讲的不一定对，仅供参考，了解即可
+### 10.1 启动雷达
 
-以下是赵立凯学长给的一些解答，大家可以参考学习：
+**终端1**——启动雷达驱动：
 
-> Q:怎么去创建一个ros2的Python工程
-> A:可以使用ai创建，但是不能过于依赖ai。针对于Python工程文件，可以使用ai去克隆示例包，Python工程文件夹一般创建在工作空间的src子文件夹里，Python工程文件夹一般包含(注:xxx不为同一内容):
->   launch文件夹(作为启动文件，可以不用，建议用)
->       xxx.launch.py
->   xxx文件夹(与本项目文件夹同名)
->       xxx.py(书写主要代码部分)
->       _init_.py(内容可以为空，但是不能没有)
->       xxx.py(按需去写，可以没有)
->   setup.py(编译文件，必须有，出错概率高)
->   setup.cfg(辅助编译文件，在Python包必须有)
->   package.xml(引用文件夹说明，必须有)
-> 以上为一个包的大体内容，建议书写Python文件，没有功底的不要乱改，尤其要注意格式与语法错误，可以根据我发的示例去改校准自己的内容。
-> Python包运行方式:
-> ros2 launch xxx文件夹 xxx.launch.py(必须在有xxx.launch文件的情况下使用）
-> ros2 run xxx文件夹 xxx文件(无后缀)(无后缀，调试可用，建议最好使用.launch.py文件运行)
->
-> Q:怎么去创建一个ros2的c++工程
-> A:相当于Python，c++运行速度更快，占用CPU更低，标准工程应采用c++，初学者用Python建包后，再学c++。可以使用ai去克隆示例包，c++工程文件夹也应建立于工作空间的src子文件夹下，其内容应包含(xxx不为同一内容):
-> Cmakelist.txt文件(编译文件，最容易出错，必须有)
-> src文件夹
->      .cpp文件存放处(主要运行文件)
-> include文件夹
->       .hpp引用文件，头文件存放处
-> package.xml(引用文件夹说明，必须有)
-> 纯c++包不要用Python文件，c++启动方式为
-> ros2 run xxx文件夹 xxx文件(无后缀)
-> 想同时使用c++与Python，可以参考下一个问题。
+```bash
+ros2 launch lslidar_driver lsn10_launch.py
+```
 
---------
+等待输出 `[INFO] [lslidar_driver]: Lslidar driver started` 表示雷达启动成功。
 
+### 10.2 启动 Cartographer
 
+**终端2**——启动 Cartographer 建图：
 
-## 结语
+```bash
+ros2 launch cartographer_config n10_cartographer.launch.py
+```
 
-至此，整个方案就讲解完毕了。本来想着写一个有手就行，傻子也能学会的建图教程。但大家应该也发现了，本文越往后越水，实在是力不从心，越往后写越懒了，总想着尽快写完。但本文所讲也算是够详细了，供大家零基础入门使用也算够用了。
+### 10.3 在 RViz2 中查看建图
 
-前前后后，写完本文章花了大概一个多星期的时间。在写本文的同时，我也在教大家的过程中学习了不少东西，所以本文也算是初学者的独白吧，存在很多不够准确的措辞，不够完美的方式，不够正确的理解，过于浅显的见解等各种不足之处。望大家谅解，也积极接受大家的指正，愿与大家共同学习。
+Cartographer 启动后会自动打开 RViz2。在 RViz2 中进行以下配置：
 
-本文所代表的，只是飞行器发展中所停留的一个小阶段，飞行器绝不会仅仅停留在这个阶段，各种技术都在等待我们、你们还有未来的他们，不断地改进、发展、迭代还有创造。希望大家能从本文有所收获，并从这些收获中发展出属于你们自己的养分，继续给予后来人，让飞行器每一代的树苗都长成比前一代更高大的大树。
+1. 将左侧 `Fixed Frame` 改为 `map`
 
-最后，希望大家能继承传统，推陈出新，代代相传，将飞行器精神与知识传承下去。也愿大家能学有所成，有所成就，变得越来越牛逼！
+   ![image-20260429073221267](./飞行器ros2激光slam方案.assets/image-20260429073221267.png)
+
+2. 点击 `Add` → `By topic`：
+
+   - 添加 `/map` → `Map`（地图显示）
+   - 添加 `/scan` → `LaserScan`（激光扫描显示）
+
+3. 在 LaserScan 的属性中：
+   - `Size (m)` → `0.05`（使点云变大）
+
+现在你应该能看到地图在逐渐构建：
+
+![屏幕截图 2025-11-16 213059](./飞行器ros2激光slam方案.assets/屏幕截图%202025-11-16%20213059.png)
