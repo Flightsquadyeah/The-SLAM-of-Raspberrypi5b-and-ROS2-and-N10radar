@@ -921,6 +921,7 @@ return options
 ### 9.3 编写 Launch 文件
 
 ```bash
+mkdir -p ~/ros2_ws/src/cartographer_config/launch
 nano ~/ros2_ws/src/cartographer_config/launch/n10_cartographer.launch.py
 ```
 
